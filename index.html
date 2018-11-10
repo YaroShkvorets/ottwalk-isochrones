@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title>Ottawa Walking and Cycling Isochrones</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.50.0/mapbox-gl.js'></script>
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.50.0/mapbox-gl.css' rel='stylesheet' />
+    <link href='https://www.mapbox.com/base/latest/base.css' rel='stylesheet' />
+    <script src='//maps.bikeottawa.ca/js/mapbox-gl-geocoder.min.js'></script>
+    <link rel='stylesheet' href='//maps.bikeottawa.ca/css/mapbox-gl-geocoder.css' type='text/css' />
+    <style>
+        #app { position:absolute; top:0; right:0; bottom:0; left:0; }
+        #map { position:absolute; top:0; right:0; bottom:0; left:0; }
+        #legend { font-weight: 300; font-size: 13px; z-index: 300; padding: 10px; position: absolute; text-align: center; color: #222; bottom: 20px; left: 50%; margin-left: -120px; width: 320px; background: rgba(255,255,255,0.75); }
+        .legend-caption { display: inline-block; }
+        .legend-item { display: inline-block; width: 30px; text-align: center; font-size: 12px; }
+          #m3 { background: #0055DB; }
+          #m6 { background: #3276DE; }
+          #m9 { background: #6497E2; }
+          #m12 { background: #96B8E6; }
+          #m15 { background: #C8D9EA; }
+        .mapboxgl-popup-content { color:#000 }
+    </style>
+</head>
+<body>
+  <div id='app' class='col12 contain clip'>
+    <div id='map'></div>
+    <div id='error' class='note error contain col8 margin2 hidden pad2'>
+      <h3>Error</h3>
+      <p>Something went wrong. Either our server didn't respond or the request was blocked by your browser. <br>Please refresh the page and <a target="_blank" href="https://bikeottawa.ca/index.php/about-bike-ottawa/contact-us">contact Bike Ottawa</a> if this error doesn't go away.</p>
+    </div>
+    <div id='info' class='note warning contain col8 margin2 pad2'>
+      <h3>Hi!</h3>
+      <p>Drag the icon or enter an address to see isochrones</p>
+    </div>
+    <div class='pin-left pad2'>
+      <a href='#settings' class='button fill-darken2 icon menu'></a>
+    </div>
+    <div id="legend">
+      <div class="legend-caption"><span class="lang-en">Reachable&nbsp;in&nbsp;</span></div>
+      <div id="m3" class="legend-item">3</div><div id="m6" class="legend-item">6</div><div id="m9" class="legend-item">9</div><div id="m12" class="legend-item">12</div><div id="m15" class="legend-item">15</div>
+      <div class="legend-caption"><span class="lang-en" >&nbsp;minutes</span></div>
+    </div>
+    <div id='settings' class='col4 pad2 fill-darken2 pin-left offcanvas-left animate scroll-styled'>
+      <a href='#' class='fill-darken2 pad1 icon close button fr'></a>
+      <div class='clearfix'></div>
+      <form>
+        <h5>Mode</h5>
+        <div class='rounded-toggle inline '>
+          <input type='radio' name='dir' id='foot' value='foot' checked='checked' >
+          <label for='foot' >Walk</label>
+          <input type='radio' name='dir' id='lts4' value='lts4'>
+          <label for='lts4' >Bike</label>
+        </div><br><br>
+        <h5>Travel time</h5>
+        <fieldset class='intervals checkbox-pill clearfix '>
+          <input type='checkbox' id='i3' checked='checked' value=3>
+          <label for='i3' class='button icon check quiet'>3m</label>
+          <input type='checkbox' id='i6' checked='checked' value=6>
+          <label for='i6' class='button icon check quiet'>6m</label>
+          <input type='checkbox' id='i9' checked='checked' value=9>
+          <label for='i9' class='button icon check quiet'>9m</label>
+          <input type='checkbox' id='i12' checked='checked' value=12>
+          <label for='i12' class='button icon check quiet'>12m</label>
+          <input type='checkbox' id='i15' checked='checked' value=15>
+          <label for='i15' class='button icon check quiet'>15m</label>
+        </fieldset>
+        <h5>Details</h5>
+        <div class='rounded-toggle inline'>
+          <input type='radio' name='details' id='details-low' value='4'>
+          <label for='details-low' >Low</label>
+          <input type='radio' name='details' id='details-medium' value='2' checked='checked'>
+          <label for='details-medium' >Medium</label>
+          <input type='radio' name='details' id='details-high' value='1'>
+          <label for='details-high' >High</label>
+        </div><br><br>
+      </form>
+      <div class='center pad2'>
+        <a href='https://bikeottawa.ca'><img src="//maps.bikeottawa.ca/img/logos/bikeottawa.png" style="width:32px; height:32px;"></a>
+        <a href='https://github.com/BikeOttawa/maps.bikeottawa.ca-frontend'><img src="//maps.bikeottawa.ca/img/logos/github.png" style="width:32px; height:32px;"></a>
+        <a href='https://twitter.com/BikeOttawa'><img src="//maps.bikeottawa.ca/img/logos/twitter.png" style="width:32px; height:32px;">  </a>
+      </div>
+
+      <div class='center pad2 small'><p class='fr'>Data as of: <span id='dateUpdated'>[updating...]</span></p></div>
+    </div>
+
+  <div class="loading" title="loading..." id="loader"></div>
+  <script>
+    var args = location.search.replace(/^\?/,'').split('&').reduce(function(o, param) {
+      var keyvalue=param.split('=');
+      o[keyvalue[0]] = keyvalue[1];
+      return o;
+    }, {});
+
+    //mapboxgl.accessToken = args.access_token || localStorage.accessToken;
+    mapboxgl.accessToken = 'pk.eyJ1IjoiYmlrZW90dGF3YSIsImEiOiJjamdqaWxrN3gwZXQ4MnFxbjAwZXRpbG8zIn0.XhAdk2ASwdipubccCWTfoQ';
+    var mapEl = document.getElementById('map');
+
+
+
+    var map = new mapboxgl.Map({
+        container: mapEl,
+        style: 'mapbox://styles/mapbox/light-v8',
+        center: [-75.697927,45.417431],
+        zoom: 13,
+        minZoom: 10,
+        maxZoom: 17,
+        maxBounds: [[-76.385193,44.963826],[-75.011902,45.614998]],
+        attributionControl: false
+    });
+
+    map.addControl(new mapboxgl.ScaleControl({
+        maxWidth: 100,
+        unit: 'metric'
+    }), 'bottom-left');
+
+    map.addControl(new mapboxgl.NavigationControl(),'bottom-right');
+    map.addControl(new mapboxgl.AttributionControl({compact: true }), 'bottom-right');
+
+
+
+    const nominatimGeocoder = (query) => {
+
+      const params = { format: "json", q: query, limit: 5, viewbox:'-76.36384,45.51697,-74.92326,45.03379', bounded: 1};
+    	const urlParams = new URLSearchParams(Object.entries(params));
+
+      return fetch("//nominatim.openstreetmap.org/search?" + urlParams).then(function(response) {
+    		if(response.ok) {
+    			return response.json();
+    		} else {
+    			return [];
+    		}
+    	}).then(function(json) {
+    		return json.map(function(place) {
+    			return {
+            center: [place.lon, place.lat],
+            geometry: {
+                type: "Point",
+                coordinates: [place.lon, place.lat]
+            },
+            place_name: place.display_name,
+            properties: {},
+            type: 'Feature'
+    			};
+    		});
+    	});
+    };
+
+    const geocoder = new MapboxGeocoder({
+        accessToken: mapboxgl.accessToken,
+        bbox: [-76.385193,44.963826,-75.011902,45.614998],
+        zoom: 13,
+        limit: 10,
+        asyncGeocoder: nominatimGeocoder
+    })
+
+    map.addControl(geocoder)
+
+    var isDragging;
+    var isCursorOverPoint;
+
+    var canvas = map.getCanvasContainer();
+
+    var point = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [-75.697927,45.417431]
+            }
+        }]
+    };
+    var gridSource = {
+        "type": "FeatureCollection",
+        "features": []
+    };
+    var routePoint = {
+        "type": "Feature",
+        "properties":{title:'N/A'},
+        "geometry": {
+            "type": "Point",
+            "coordinates": [0,0]
+        }
+    };
+    var routeLine = {
+        "type": "Feature",
+        "properties":{title:'N/A'},
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [[0,0]]
+        }
+
+    };
+
+
+
+    function mouseDown() {
+        if (!isCursorOverPoint) return;
+        map.getSource('route').setData({"type": "Feature","geometry": {"type": "Point","coordinates": [ 0, 0 ]}})
+        map.getSource('route-point').setData({"type": "Feature","geometry": {"type": "Point","coordinates": [ 0, 0 ]}})
+        isDragging = true;
+
+        // Set a cursor indicator
+        canvas.style.cursor = 'grab';
+
+        // Mouse events
+        map.on('mousemove', onMove);
+        map.once('mouseup', onUp);
+    }
+
+    function onMove(e) {
+        if (!isDragging) return;
+        var coords = e.lngLat;
+        // Set a UI indicator for dragging.
+        canvas.style.cursor = 'grabbing';
+        point.features[0].geometry.coordinates = [coords.lng, coords.lat];
+        map.getSource('point').setData(point);
+    }
+
+    function onUp(e) {
+
+        canvas.style.cursor = '';
+
+        // Unbind mouse events
+        map.off('mousemove', onMove);
+    }
+    function addUpdatedDate(){
+      const request = new XMLHttpRequest()
+      request.open('GET','https://api.mapbox.com/tilesets/v1/bikeottawa?access_token=sk.eyJ1IjoiYmlrZW90dGF3YSIsImEiOiJjamdyYTJmN2EwMmtoMzJwc3JxM2hoZ3ozIn0.YB1JNmncsPvktmgGU_zK8A')
+      request.onload = function () {
+        if (request.status >= 200 && request.status < 400) {
+          var data = JSON.parse(request.responseText);
+          if(data && data instanceof Array){
+            const date = new Date(data.find(x => x.id === 'bikeottawa.7gev94ax').modified)
+            document.getElementById('dateUpdated').innerHTML = date.toLocaleString();
+          }
+        }
+      }
+      request.send()
+    }
+
+    var isochroneLayers = [
+          {time:15, color:'#C8D9EA', opacity:1},
+          {time:12, color:'#96B8E6', opacity:1},
+          {time:9, color:'#6497E2', opacity:1},
+          {time:6, color:'#3276DE', opacity:1},
+          {time:3, color:'#0055DB', opacity:1},
+          {time:0, color:'#ff9933', opacity:1}
+        ];
+
+    map.on('load', function(e) {
+        addUpdatedDate()
+        document.getElementById("loader").style.visibility = "hidden";
+      });
+
+    map.on('style.load', function () {
+
+      map.addSource('grid', {
+          "type" : "geojson",
+          "data": gridSource
+      });
+
+      map.addSource('point', {
+          "type": "geojson",
+          "data": point
+      });
+
+      isochroneLayers.forEach(function (layer, i) {
+        if(i==isochroneLayers.length-1){
+          map.addLayer({
+            'id': 'grid-' + i,
+            "type": "circle",
+            'source': 'grid',
+            "paint": {
+              "circle-radius": 10,
+              "circle-color": layer.color
+            },
+            'filter': [
+              'all',
+              ['==', '$type', 'Point']
+            ]
+          })
+        }
+        else{
+
+          map.addLayer({
+            'id': 'grid-' + i,
+            'type': 'fill',
+            'source': 'grid',
+            'layout': {},
+            'paint': {
+              'fill-color': layer.color,
+              'fill-opacity': layer.opacity,
+              'fill-outline-color': "#0088ff"
+            },
+            'filter': [
+              'all',
+              ['==', '$type', 'Polygon'],
+              ['<=', 'time', layer.time]
+            ]
+          }, 'road-path');
+        }
+      });
+
+      map.loadImage("//maps.bikeottawa.ca/img/bike-icon.png", function(error, image) {
+        if (error) throw error;
+        map.addImage("custom-marker", image);
+
+        map.addLayer({
+            "id": "point",
+            "type": "symbol",
+            "source": "point",
+            layout: {
+            "icon-image": "custom-marker",
+            "icon-size": 0.75
+          }
+        });
+      });
+
+      map.addSource('route', { type: 'geojson' , data: routeLine});
+      map.addLayer({
+         "id": "route",
+         "type": "line",
+         "source": 'route',
+         "layout":{
+             "line-cap": "round"
+         },
+         "paint": {
+             "line-color": "#333",
+             "line-width": 3,
+             "line-opacity": 1
+         }
+      });
+
+      map.addSource('route-point', { type: 'geojson' , data: routePoint});
+      map.addLayer({
+          "id": "route-point",
+          "type": "circle",
+          "source": "route-point",
+          "paint": {
+              "circle-radius": 5,
+              "circle-color": "#333"
+          }
+      });
+      map.addLayer({
+          "id": "route-label",
+          "type": "symbol",
+          "source": "route-point",
+          "layout": {
+              "text-field": '{title}',
+              "text-size": 14,
+              "text-offset": [0,-2]
+          },
+          "paint": {
+            "text-halo-color": "#fff",
+            "text-halo-width": 2
+          }
+      });
+      //url = new URLSearchParams(window.location.href)
+      url = (function(a) {    //workaround for edge that doesn't support URLSearchParams
+          if (a == "") return {};
+          var b = {};
+          for (var i = 0; i < a.length; ++i)
+          {
+              var p=a[i].split('=', 2);
+              if (p.length == 1)
+                  b[p[0]] = "";
+              else
+                  b[p[0]] = decodeURIComponent(p[1].replace(/\+/g, " "));
+          }
+          return b;
+      })(window.location.search.substr(1).split('&'));
+      const lat = url['lat']
+      const lng = url['lng']
+      const lts = url['lts']
+      if(lat && lng){
+        map.flyTo({center: [lng, lat]})
+        point.features[0].geometry.coordinates = [lng, lat];
+        map.getSource('point').setData(point.features[0].geometry);
+        document.getElementById(lts?lts:'lts4').checked = true;
+
+      }
+
+    //  fetchIsochrones();
+
+      map.on('mouseenter', 'point', function() {
+          //map.setPaintProperty('point', 'circle-color', '#999');
+          canvas.style.cursor = 'move';
+          isCursorOverPoint = true;
+          map.dragPan.disable();
+      });
+
+      map.on('mousedown', mouseDown);
+
+      map.on('click', function(e) {
+          fetchRoute(e.lngLat)
+      });
+
+      map.on('mouseleave', 'point', function(e) {
+      //  map.setPaintProperty('point', 'circle-color', '#333');
+        canvas.style.cursor = '';
+        isCursorOverPoint = false;
+        map.dragPan.enable();
+
+
+      });
+
+      const request = new XMLHttpRequest();
+
+      function fetchRoute(lngLat) {
+        const query = encodeURIComponent([point.features[0].geometry.coordinates.join(','),[lngLat.lng, lngLat.lat].join(',')].join(';'));
+        const api = "https://maps.bikeottawa.ca/route/v1/"+document.querySelector('input[name="dir"]:checked').value
+        request.abort();
+        request.open('GET', api + '/'+ query + '?alternatives=false&steps=true&geometries=geojson', true);
+        request.onload = function () {
+          if (request.status >= 200 && request.status < 400) {
+            var data = JSON.parse(request.responseText);
+
+            if (data.error) {
+              return
+            }
+
+            if (data.routes[0]){
+              routeLine.geometry.coordinates = data.routes[0].geometry.coordinates
+              map.getSource('route').setData(routeLine);
+              routePoint.geometry.coordinates = data.waypoints[data.waypoints.length - 1].location
+              routePoint.properties.title = buildTitle(data.routes[0].duration, data.routes[0].distance)
+              map.getSource('route-point').setData(routePoint)
+            }
+          } else {
+            return
+          }
+        };
+
+        request.onerror = function () {
+          return
+        };
+
+        request.send();
+      }
+      function buildTitle(duration, distance){
+        let ret = Math.floor(duration / 60).toString() + ':'+('00'+Math.floor(duration % 60)).slice(-2)
+        ret += '\n'+Math.floor(distance)+'m'
+        return ret
+      }
+
+      function fetchIsochrones() {
+
+        document.getElementById('error').style="display:hidden";
+        document.getElementById('info').classList.add('hidden');
+        let pLng = point.features[0].geometry.coordinates[0];
+        let pLat = point.features[0].geometry.coordinates[1];
+        /*const pt = map.project(point.features[0].geometry.coordinates)
+        pt.y+=15
+        const coords = map.unproject(pt);
+        [pLng,pLat]=[coords.lng,coords.lat]
+        */mapEl.classList.add('loading');
+        var intervals = Array.from(
+          document.querySelectorAll('.intervals input[type="checkbox"]:checked')
+        ).map(function(el) { return el.value });
+
+        const mode = document.querySelector('input[name="dir"]:checked').value;
+
+        var params = {
+          lng: pLng,
+          lat: pLat,
+          radius: mode=='foot' ? 1.5 : 3.5,
+          deintersect: 'true',
+          concavity: 2,
+          lengthThreshold: 0,
+          units: 'kilometers',
+          cellSize: document.querySelector('input[name="details"]:checked').value * 0.03,
+          dir: mode,
+        };
+
+        //var url = new URL("http://ec2-34-214-224-151.us-west-2.compute.amazonaws.com:4000");
+        var url = new URL("https://maps.bikeottawa.ca:3000");
+        url.href+='?'
+        Object.keys(params).forEach(key => url.href+=key+'='+params[key]+'&');
+        (intervals.length > 0 ? intervals : [3, 6, 9, 12, 15]).forEach(interval => url.href+='intervals='+interval+'&');
+
+        console.groupCollapsed(pLng, pLat);
+        console.time('request');
+        fetch(url)
+          .then(response => response.json())
+          .then((data) => {
+            console.log(data);
+            console.timeEnd('request');
+            console.groupEnd();
+            map.getSource('grid').setData(data);
+            mapEl.classList.remove('loading');
+
+            //point.features[0].geometry.coordinates = data.features[5].geometry.coordinates;
+            //map.getSource('point').setData(point);
+          })
+          .catch((error) => {
+            console.error(error);
+            document.getElementById('error').style="display:block";
+            mapEl.classList.remove('loading');
+          });
+        window.history.replaceState(null, null, window.location.pathname+'?&lat='+pLat+'&lng='+pLng+'&lts='+params.dir+'&');
+
+      }
+
+      map.on('mouseup', function(e) {
+        if (!isDragging) return;
+        isDragging = false;
+
+        fetchIsochrones();
+
+      });
+
+      function toggleLayer (checkbox) {
+        map.setLayoutProperty(checkbox.currentTarget.id, 'visibility', checkbox.currentTarget.checked?'visible':'none');
+      }
+
+      document.getElementById('foot').onchange = fetchIsochrones
+      document.getElementById('lts4').onchange = fetchIsochrones
+      document.getElementById('details-low').onchange = fetchIsochrones
+      document.getElementById('details-medium').onchange = fetchIsochrones
+      document.getElementById('details-high').onchange = fetchIsochrones
+
+      geocoder.on('result', function(ev) {
+        point.features[0].geometry.coordinates = ev.result.geometry.coordinates;
+        map.getSource('point').setData(ev.result.geometry);
+        fetchIsochrones();
+      });
+    });
+
+  </script>
+
+</body>
+</html>
