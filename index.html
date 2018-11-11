@@ -48,7 +48,7 @@
       <form>
         <h5>Mode</h5>
         <div class='rounded-toggle inline '>
-          <input type='radio' name='dir' id='foot' value='foot' checked='checked' >
+          <input type='radio' name='dir' id='foot' value='foot'>
           <label for='foot' >Walk</label>
           <input type='radio' name='dir' id='lts4' value='lts4'>
           <label for='lts4' >Bike</label>
@@ -252,6 +252,9 @@
 
     map.on('load', function(e) {
         addUpdatedDate()
+        const mode = document.querySelector('input[name="dir"]:checked').value;
+        map.setLayoutProperty(mode=='foot'?'bike-point':'foot-point', 'visibility', 'none');
+        map.setLayoutProperty(mode=='foot'?'foot-point':'bike-point', 'visibility', 'visible');
         document.getElementById("loader").style.visibility = "hidden";
       });
 
@@ -304,16 +307,30 @@
         }
       });
 
-      map.loadImage("//maps.bikeottawa.ca/img/bike-icon.png", function(error, image) {
+      map.loadImage("img/bike-icon.png", function(error, image) {
         if (error) throw error;
-        map.addImage("custom-marker", image);
-
+        map.addImage("bike-marker", image);
         map.addLayer({
-            "id": "point",
+            "id": "bike-point",
             "type": "symbol",
             "source": "point",
             layout: {
-            "icon-image": "custom-marker",
+            "icon-image": "bike-marker",
+            "icon-size": 0.75
+          }
+        });
+      });
+
+      map.loadImage("img/walk-icon.png", function(error, image) {
+        if (error) throw error;
+        map.addImage("foot-marker", image);
+
+        map.addLayer({
+            "id": "foot-point",
+            "type": "symbol",
+            "source": "point",
+            layout: {
+            "icon-image": "foot-marker",
             "icon-size": 0.75
           }
         });
@@ -374,19 +391,23 @@
       })(window.location.search.substr(1).split('&'));
       const lat = url['lat']
       const lng = url['lng']
-      const lts = url['lts']
+      const mode = url['mode']
       if(lat && lng){
         map.flyTo({center: [lng, lat]})
         point.features[0].geometry.coordinates = [lng, lat];
         map.getSource('point').setData(point.features[0].geometry);
-        document.getElementById(lts?lts:'lts4').checked = true;
-
       }
+      document.getElementById(mode=='lts4'?'lts4':'foot').checked = true;
 
     //  fetchIsochrones();
 
-      map.on('mouseenter', 'point', function() {
-          //map.setPaintProperty('point', 'circle-color', '#999');
+      map.on('mouseenter', 'bike-point', function() {
+          canvas.style.cursor = 'move';
+          isCursorOverPoint = true;
+          map.dragPan.disable();
+      });
+
+      map.on('mouseenter', 'foot-point', function() {
           canvas.style.cursor = 'move';
           isCursorOverPoint = true;
           map.dragPan.disable();
@@ -398,13 +419,17 @@
           fetchRoute(e.lngLat)
       });
 
-      map.on('mouseleave', 'point', function(e) {
+      map.on('mouseleave', 'foot-point', function(e) {
       //  map.setPaintProperty('point', 'circle-color', '#333');
         canvas.style.cursor = '';
         isCursorOverPoint = false;
         map.dragPan.enable();
-
-
+      });
+      map.on('mouseleave', 'bike-point', function(e) {
+      //  map.setPaintProperty('point', 'circle-color', '#333');
+        canvas.style.cursor = '';
+        isCursorOverPoint = false;
+        map.dragPan.enable();
       });
 
       const request = new XMLHttpRequest();
@@ -448,6 +473,10 @@
 
       function fetchIsochrones() {
 
+        const mode = document.querySelector('input[name="dir"]:checked').value;
+        map.setLayoutProperty(mode=='foot'?'bike-point':'foot-point', 'visibility', 'none');
+        map.setLayoutProperty(mode=='foot'?'foot-point':'bike-point', 'visibility', 'visible');
+
         document.getElementById('error').style="display:hidden";
         document.getElementById('info').classList.add('hidden');
         let pLng = point.features[0].geometry.coordinates[0];
@@ -461,12 +490,11 @@
           document.querySelectorAll('.intervals input[type="checkbox"]:checked')
         ).map(function(el) { return el.value });
 
-        const mode = document.querySelector('input[name="dir"]:checked').value;
 
         var params = {
           lng: pLng,
           lat: pLat,
-          radius: mode=='foot' ? 1.5 : 3.5,
+          radius: mode=='foot' ? 1.5 : 3,
           deintersect: 'true',
           concavity: 2,
           lengthThreshold: 0,
@@ -500,7 +528,7 @@
             document.getElementById('error').style="display:block";
             mapEl.classList.remove('loading');
           });
-        window.history.replaceState(null, null, window.location.pathname+'?&lat='+pLat+'&lng='+pLng+'&lts='+params.dir+'&');
+        window.history.replaceState(null, null, window.location.pathname+'?&lat='+pLat+'&lng='+pLng+'&mode='+params.dir+'&');
 
       }
 
